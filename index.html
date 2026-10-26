@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Coffee Shops By Me</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -68,6 +69,37 @@
   .card:hover .tag, .card.active .tag { background: var(--panel); }
   .tag.indie { color: var(--good); font-weight: 600; }
   .links a { color: var(--accent); font-size: .85rem; margin-right: 10px; }
+  /* Quick-pick cities */
+  .cities {
+    display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); scrollbar-width: none;
+  }
+  .cities::-webkit-scrollbar { display: none; }
+  .cities .label { color: var(--muted); font-size: .85rem; align-self: center; white-space: nowrap; margin-right: 4px; }
+  .cities button { padding: 5px 12px; font-size: .85rem; white-space: nowrap; background: var(--chip); border-color: transparent; }
+  .cities button:hover, .cities button.on { background: var(--accent); color: var(--accent-ink); }
+
+  /* Map markers */
+  .pin {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    display: grid; place-items: center; transition: transform .15s;
+  }
+  .pin span { transform: rotate(45deg); color: var(--accent-ink); font: 600 12px Inter, sans-serif; }
+  .pin.small { width: 14px; height: 14px; border-radius: 50%; transform: none; border-width: 2px; opacity: .85; }
+  .pin.active { transform: rotate(-45deg) scale(1.3); background: var(--ink); }
+  .pin.small.active { transform: scale(1.6); opacity: 1; }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(37,99,235,.5); animation: pulse 2s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 16px rgba(37,99,235,0); } 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } }
+
+  /* Softer Leaflet chrome */
+  .leaflet-control-zoom { border: 0 !important; box-shadow: 0 2px 8px rgba(0,0,0,.15) !important; border-radius: 12px !important; overflow: hidden; }
+  .leaflet-control-zoom a { background: var(--panel) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); border-radius: 12px; }
+  .leaflet-popup-content { font-family: Inter, sans-serif; margin: 10px 14px; }
+  .leaflet-control-attribution { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; color: var(--muted) !important; }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+
   @media (max-width: 760px) {
     main { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
     #map { order: -1; }
@@ -97,17 +129,51 @@
     </select>
   </div>
 </header>
+<nav class="cities" id="cities" aria-label="Popular cities"><span class="label">Popular:</span></nav>
 <main>
   <div id="list"><div id="status">Tap “Use my location” or search a place to find coffee nearby.</div></div>
   <div id="map"></div>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js"></script>
 <script>
-const map = L.map('map').setView([39.5, -98.35], 4);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+const map = L.map('map', { zoomSnap: 0.5 }).setView([39.5, -98.35], 4);
+
+// Modern vector basemap from OpenFreeMap (free, no API key); follows light/dark mode.
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+const styleUrl = () => `https://tiles.openfreemap.org/styles/${darkQuery.matches ? 'dark' : 'positron'}`;
+const basemap = L.maplibreGL({
+  style: styleUrl(),
+  attribution: '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
 }).addTo(map);
+darkQuery.addEventListener('change', () => basemap.getMaplibreMap().setStyle(styleUrl()));
+
+const CITIES = [
+  ['New York', 40.7411, -73.9897], ['Los Angeles', 34.0522, -118.2437], ['Chicago', 41.8827, -87.6233],
+  ['San Francisco', 37.7793, -122.4192], ['Seattle', 47.6097, -122.3331], ['Portland', 45.5202, -122.6742],
+  ['Austin', 30.2672, -97.7431], ['Boston', 42.3554, -71.0605], ['Miami', 25.7743, -80.1937],
+  ['Denver', 39.7392, -104.9903], ['Washington, DC', 38.9007, -77.0365], ['Philadelphia', 39.9526, -75.1652],
+  ['Nashville', 36.1627, -86.7816], ['New Orleans', 29.9511, -90.0715], ['San Diego', 32.7157, -117.1611],
+];
+const citiesEl = document.getElementById('cities');
+CITIES.forEach(([name, lat, lon]) => {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.addEventListener('click', () => {
+    citiesEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById('q').value = name;
+    setCenter(lat, lon, false);
+  });
+  citiesEl.appendChild(b);
+});
+
+const pinIcon = (rank, active) => rank <= 10
+  ? L.divIcon({ className: '', html: `<div class="pin${active ? ' active' : ''}"><span>${rank}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -30] })
+  : L.divIcon({ className: '', html: `<div class="pin small${active ? ' active' : ''}"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], popupAnchor: [0, -8] });
+let activeMarker = null;
 
 const listEl = document.getElementById('list');
 const radiusEl = document.getElementById('radius');
@@ -282,24 +348,30 @@ function render() {
         </div>
       </div>
       <div class="dist">${fmtMiles(s.dist)}</div>`;
-    const m = L.marker([s.lat, s.lon]).bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`);
+    const rank = i + 1;
+    const m = L.marker([s.lat, s.lon], { icon: pinIcon(rank), zIndexOffset: 1000 - rank, title: t.name })
+      .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`);
     markers.addLayer(m);
     card.addEventListener('click', () => {
       document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
-      map.setView([s.lat, s.lon], 17); m.openPopup();
+      if (activeMarker) activeMarker.setIcon(pinIcon(activeMarker.rank));
+      m.rank = rank; m.setIcon(pinIcon(rank, true)); activeMarker = m;
+      map.flyTo([s.lat, s.lon], 17, { duration: 0.6 }); m.openPopup();
     });
     m.on('click', () => { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.click(); });
     listEl.appendChild(card);
   });
 }
 
-function setCenter(lat, lon) {
+function setCenter(lat, lon, clearCity = true) {
   center = { lat, lon };
+  activeMarker = null;
+  if (clearCity) citiesEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
   if (meMarker) meMarker.remove();
-  meMarker = L.circleMarker([lat, lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 })
-    .addTo(map).bindPopup('You are here');
-  map.setView([lat, lon], 15);
+  meMarker = L.marker([lat, lon], { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18] }), zIndexOffset: 2000 })
+    .addTo(map).bindPopup('Search center');
+  map.flyTo([lat, lon], 15, { duration: 1 });
   findShops();
 }
 
