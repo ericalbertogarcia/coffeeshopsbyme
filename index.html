@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coffee Shops By Me</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf6f1;
+    --panel: #ffffff;
+    --ink: #2b1d14;
+    --muted: #7a6656;
+    --line: #eadfd3;
+    --accent: #8b4a2b;
+    --accent-ink: #ffffff;
+    --chip: #f3e8dc;
+    --good: #2f7d4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1310; --panel: #241a15; --ink: #f4e9df; --muted: #b39d8b;
+      --line: #3a2b22; --accent: #d98a5c; --accent-ink: #1a1310; --chip: #33251d; --good: #6fcf97;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Inter, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    padding: 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  }
+  h1 { font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: 1.5rem; margin: 0; }
+  h1 span { color: var(--accent); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, input, select {
+    font: inherit; font-size: .95rem; border-radius: 999px; border: 1px solid var(--line);
+    padding: 8px 14px; background: var(--panel); color: var(--ink);
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  form { display: flex; gap: 6px; }
+  input[type=search] { min-width: 0; width: 200px; }
+  main { flex: 1; display: grid; grid-template-columns: 380px 1fr; min-height: 0; }
+  #list { overflow-y: auto; border-right: 1px solid var(--line); }
+  #map { min-height: 300px; }
+  #status { padding: 16px; color: var(--muted); }
+  .card {
+    padding: 14px 16px; border-bottom: 1px solid var(--line); cursor: pointer;
+    display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: start;
+  }
+  .card:hover, .card.active { background: var(--chip); }
+  .rank {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-weight: 600; font-size: .85rem;
+  }
+  .name { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: .85rem; margin-top: 2px; }
+  .dist { font-weight: 600; font-size: .9rem; white-space: nowrap; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .tag { background: var(--chip); border-radius: 999px; padding: 2px 8px; font-size: .75rem; }
+  .card:hover .tag, .card.active .tag { background: var(--panel); }
+  .tag.indie { color: var(--good); font-weight: 600; }
+  .links a { color: var(--accent); font-size: .85rem; margin-right: 10px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
+    #map { order: -1; }
+    #list { border-right: 0; }
+    input[type=search] { width: 140px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>☕ Coffee Shops <span>By Me</span></h1>
+  <div class="controls">
+    <button class="primary" id="locate">📍 Use my location</button>
+    <form id="search">
+      <input type="search" id="q" placeholder="Or enter a city / address">
+      <button type="submit">Go</button>
+    </form>
+    <select id="radius" aria-label="Search radius">
+      <option value="800">0.5 mi</option>
+      <option value="1600" selected>1 mi</option>
+      <option value="4800">3 mi</option>
+      <option value="8000">5 mi</option>
+    </select>
+    <select id="sort" aria-label="Sort">
+      <option value="best" selected>Best match</option>
+      <option value="distance">Closest</option>
+    </select>
+  </div>
+</header>
+<main>
+  <div id="list"><div id="status">Tap “Use my location” or search a place to find coffee nearby.</div></div>
+  <div id="map"></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const map = L.map('map').setView([39.5, -98.35], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const listEl = document.getElementById('list');
+const radiusEl = document.getElementById('radius');
+const sortEl = document.getElementById('sort');
+let center = null, shops = [], markers = L.layerGroup().addTo(map), meMarker = null;
+
+function setStatus(msg) { listEl.innerHTML = `<div id="status">${msg}</div>`; }
+
+function distanceMeters(a, b) {
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const fmtMiles = m => (m / 1609.34 < 0.1 ? `${Math.round(m * 3.281)} ft` : `${(m / 1609.34).toFixed(1)} mi`);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// "Best" score: favors independent shops, coffee-focused spots, and well-documented listings,
+// with a gentle penalty for distance. OpenStreetMap has no star ratings, so this is a heuristic.
+function score(s) {
+  const t = s.tags;
+  let pts = 0;
+  if (!t.brand && !t['brand:wikidata']) pts += 3;            // independent / local
+  if (/coffee/i.test(t.cuisine || '') || /coffee|espresso|roast/i.test(t.name || '')) pts += 2;
+  if (t.opening_hours) pts += 1;
+  if (t.website || t['contact:website']) pts += 1;
+  if (t.outdoor_seating === 'yes') pts += 0.5;
+  if (t.internet_access && t.internet_access !== 'no') pts += 0.5;
+  return pts - (s.dist / Number(radiusEl.value)) * 3;
+}
+
+async function findShops() {
+  if (!center) return;
+  setStatus('Brewing results… this can take up to a minute when the free map servers are busy.');
+  const r = radiusEl.value;
+  const q = `[out:json][timeout:25];
+    (node["amenity"="cafe"](around:${r},${center.lat},${center.lon});
+     way["amenity"="cafe"](around:${r},${center.lat},${center.lon}););
+    out center tags;`;
+  try {
+    // Ask two public Overpass servers at once and use whichever answers first.
+    const servers = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+    const data = await Promise.any(servers.map(async url => {
+      const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+      if (!res.ok) throw new Error(res.status);
+      return res.json();
+    }));
+    shops = data.elements
+      .map(e => ({ id: e.id, lat: e.lat ?? e.center.lat, lon: e.lon ?? e.center.lon, tags: e.tags || {} }))
+      .filter(s => s.tags.name)
+      .map(s => ({ ...s, dist: distanceMeters(center, s) }));
+    shops.forEach(s => s.score = score(s));
+    render();
+  } catch (err) {
+    setStatus('Couldn’t reach the coffee map right now. Please try again in a moment.');
+  }
+}
+
+function render() {
+  markers.clearLayers();
+  if (!shops.length) { setStatus('No coffee shops found here. Try a bigger radius.'); return; }
+  const sorted = [...shops].sort(sortEl.value === 'distance' ? (a, b) => a.dist - b.dist : (a, b) => b.score - a.score);
+  listEl.innerHTML = '';
+  sorted.forEach((s, i) => {
+    const t = s.tags;
+    const addr = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+    const site = t.website || t['contact:website'];
+    const dir = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`;
+    const tags = [];
+    if (!t.brand) tags.push('<span class="tag indie">Local</span>');
+    else tags.push(`<span class="tag">${esc(t.brand)}</span>`);
+    if (t.outdoor_seating === 'yes') tags.push('<span class="tag">Outdoor seating</span>');
+    if (t.internet_access && t.internet_access !== 'no') tags.push('<span class="tag">Wi-Fi</span>');
+    if (t.opening_hours) tags.push(`<span class="tag">${esc(t.opening_hours)}</span>`);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="rank">${i + 1}</div>
+      <div>
+        <div class="name">${esc(t.name)}</div>
+        ${addr ? `<div class="meta">${esc(addr)}</div>` : ''}
+        <div class="tags">${tags.join('')}</div>
+        <div class="links" style="margin-top:6px">
+          <a href="${dir}" target="_blank" rel="noopener">Directions</a>
+          ${site ? `<a href="${esc(site)}" target="_blank" rel="noopener">Website</a>` : ''}
+        </div>
+      </div>
+      <div class="dist">${fmtMiles(s.dist)}</div>`;
+    const m = L.marker([s.lat, s.lon]).bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`);
+    markers.addLayer(m);
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      map.setView([s.lat, s.lon], 17); m.openPopup();
+    });
+    m.on('click', () => { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.click(); });
+    listEl.appendChild(card);
+  });
+}
+
+function setCenter(lat, lon) {
+  center = { lat, lon };
+  if (meMarker) meMarker.remove();
+  meMarker = L.circleMarker([lat, lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 })
+    .addTo(map).bindPopup('You are here');
+  map.setView([lat, lon], 15);
+  findShops();
+}
+
+document.getElementById('locate').addEventListener('click', () => {
+  if (!navigator.geolocation) return setStatus('Your browser doesn’t support location. Search a place instead.');
+  setStatus('Finding you…');
+  navigator.geolocation.getCurrentPosition(
+    p => setCenter(p.coords.latitude, p.coords.longitude),
+    () => setStatus('Location access was blocked. Search a city or address instead.'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+document.getElementById('search').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  setStatus('Looking that up…');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+    const [hit] = await res.json();
+    if (!hit) return setStatus('Couldn’t find that place. Try something more specific.');
+    setCenter(Number(hit.lat), Number(hit.lon));
+  } catch { setStatus('Search is unavailable right now. Please try again.'); }
+});
+
+radiusEl.addEventListener('change', findShops);
+sortEl.addEventListener('change', () => shops.length && render());
+</script>
+</body>
+</html>
