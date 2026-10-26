@@ -22,7 +22,6 @@
     --chip: #f3e8dc;
     --good: #2f7d4f;
     --shadow: 0 2px 12px rgba(43, 29, 20, .14);
-    --sheet-h: 0px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -74,7 +73,6 @@
   /* --- Results panel + map --- */
   main { flex: 1; display: grid; grid-template-columns: 400px 1fr; min-height: 0; }
   #panel { display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
-  .grab { display: none; }
   .panel-head { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); background: var(--panel); display: grid; gap: 10px; }
   .summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #count { font-weight: 600; font-size: .95rem; }
@@ -153,53 +151,80 @@
   .leaflet-control-attribution { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; color: var(--muted) !important; font-size: 10px; }
   .leaflet-control-attribution a { color: var(--muted) !important; }
 
-  /* --- Phones: full-screen map, floating search, draggable bottom sheet --- */
+  /* Phone-only pieces, hidden on larger screens */
+  #home, .viewtoggle { display: none; }
+  .home-btn { border: 0; background: none; padding: 0 2px; font-size: 1.1rem; cursor: default; }
+
+  /* --- Phones: simple home screen, then a list with an optional map --- */
   @media (max-width: 760px) {
-    body { overflow: hidden; }
-    .topbar {
-      position: fixed; z-index: 1001; top: 0; left: 0; right: 0;
-      padding: calc(10px + env(safe-area-inset-top)) 12px 0; background: none; border: 0;
-    }
+    /* Home: no map, just the essentials */
+    body.home .topbar, body.home #cities, body.home main { display: none; }
+    body.home #home { display: block; }
+    #home { flex: 1; overflow-y: auto; padding: calc(28px + env(safe-area-inset-top)) 20px 32px; }
+    .home-brand { font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: 1.15rem; text-align: center; }
+    .home-brand b { color: var(--accent); }
+    #home h2 { font-family: Fraunces, Georgia, serif; font-size: 2rem; line-height: 1.15; text-align: center; margin: 28px 0 10px; }
+    #home .lede { color: var(--muted); text-align: center; margin: 0 0 26px; line-height: 1.45; }
+    #home .big { display: block; width: 100%; padding: 15px; font-size: 1.05rem; }
+    #home .or { text-align: center; color: var(--muted); font-size: .85rem; margin: 14px 0; }
+    #home .searchbox { background: var(--panel); padding: 5px 5px 5px 14px; }
+    #home .searchbox input { padding: 10px 6px; }
+    #home .searchbox .go { border: 0; background: var(--chip); font-weight: 600; padding: 9px 16px; }
+    .field-label { font-size: .85rem; color: var(--muted); margin: 24px 0 8px; }
+    .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .seg button { padding: 10px 0; font-weight: 500; }
+    .seg button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    #homeCities { flex-wrap: wrap; overflow: visible; }
+
+    /* Results: compact search on top, full-screen list (or map) below */
+    .topbar { position: sticky; top: 0; z-index: 1001; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; gap: 0; }
     .brand { display: none; }
-    .searchbox { max-width: none; background: var(--panel); box-shadow: var(--shadow); border-color: transparent; padding-left: 12px; }
-    .searchbox .icon::before { content: '☕'; }
-    .searchbox .icon { font-size: 0; }
-    .searchbox .icon::before { font-size: 1.1rem; }
+    .searchbox { max-width: none; padding-left: 10px; }
+    .home-btn { cursor: pointer; }
     .locate .locate-label { display: none; }
     .locate { padding: 9px 12px; }
-    #cities {
-      position: fixed; z-index: 1001; left: 0; right: 0; top: calc(66px + env(safe-area-inset-top));
-      padding: 0 12px 8px; background: none; border: 0;
+    #cities { display: none; }
+    main { display: block; position: relative; }
+    #panel { height: 100%; border: 0; }
+    #list { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+    #map { position: absolute; inset: 0; visibility: hidden; }
+    body.mapview #map { visibility: visible; }
+    body.mapview #panel { visibility: hidden; }
+    .viewtoggle {
+      position: fixed; z-index: 1002; left: 50%; transform: translateX(-50%);
+      bottom: calc(18px + env(safe-area-inset-bottom)); padding: 12px 22px; font-weight: 600;
+      background: var(--ink); color: var(--bg); border: 0; box-shadow: 0 4px 16px rgba(0,0,0,.25);
     }
-    #cities .label { display: none; }
-    #cities button { background: var(--panel); box-shadow: var(--shadow); }
-    #cities button.on { background: var(--accent); }
-    main { position: fixed; inset: 0; display: block; }
-    #map { position: absolute; inset: 0; }
-    #panel {
-      position: fixed; z-index: 1000; left: 0; right: 0; bottom: 0; height: var(--sheet-h);
-      border: 0; border-radius: 20px 20px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,.18); overflow: hidden;
-      transition: height .28s cubic-bezier(.2, .8, .2, 1);
-    }
-    #panel.dragging { transition: none; }
-    .grab { display: block; padding: 10px 0 2px; background: var(--panel); touch-action: none; cursor: grab; }
-    .grab span { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto; }
-    .panel-head { padding: 6px 16px 10px; touch-action: none; }
-    #list { padding-bottom: env(safe-area-inset-bottom); }
+    body:not(.home) .viewtoggle { display: block; }
     .card { padding: 16px 14px; gap: 10px; }
     .btn { padding: 8px 11px; font-size: .82rem; }
     .vote { padding: 7px 12px; font-size: .85rem; }
-    .leaflet-top { top: calc(110px + env(safe-area-inset-top)); }
-    .leaflet-bottom { bottom: var(--sheet-h); }
     .leaflet-control-zoom { display: none; }
+    .leaflet-bottom { bottom: calc(70px + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
-<body>
+<body class="home">
+<section id="home" aria-label="Find coffee">
+  <div class="home-brand">☕ Coffee Shops <b>By Me</b></div>
+  <h2>Find great coffee near you</h2>
+  <p class="lede">Local favorites, traveler picks, and what people say each shop does best.</p>
+  <button class="primary big" data-locate>📍 Use my location</button>
+  <div class="or">or</div>
+  <form id="homeSearch" class="searchbox" role="search">
+    <span aria-hidden="true">🔍</span>
+    <input type="search" id="homeQ" placeholder="Search a city or address" enterkeyhint="search" autocomplete="off" aria-label="Search a city or address">
+    <button type="submit" class="go">Go</button>
+  </form>
+  <div class="field-label">Distance</div>
+  <div class="seg" id="homeRadius" role="group" aria-label="Distance"></div>
+  <div class="field-label">Popular cities</div>
+  <div class="chips" id="homeCities"></div>
+</section>
 <header class="topbar">
   <h1 class="brand">☕ Coffee Shops <b>By Me</b></h1>
   <form id="search" class="searchbox" role="search">
-    <span class="icon" aria-hidden="true">🔍</span>
+    <button type="button" class="home-btn" id="goHome" aria-label="Back to start">☕</button>
     <input type="search" id="q" placeholder="Search a city or address" enterkeyhint="search" autocomplete="off" aria-label="Search a city or address">
     <button type="button" class="locate" data-locate aria-label="Use my location">📍<span class="locate-label"> Near me</span></button>
   </form>
@@ -207,7 +232,6 @@
 <nav class="chips" id="cities" aria-label="Popular cities"><span class="label">Popular:</span></nav>
 <main>
   <section id="panel" aria-label="Coffee shops">
-    <div class="grab" aria-hidden="true"><span></span></div>
     <div class="panel-head">
       <div class="summary">
         <span id="count">Coffee near you</span>
@@ -237,6 +261,7 @@
   </section>
   <div id="map"></div>
 </main>
+<button class="viewtoggle" id="viewToggle" type="button">🗺 Map</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -255,60 +280,36 @@ const basemap = L.maplibreGL({
 darkQuery.addEventListener('change', () => basemap.getMaplibreMap().setStyle(styleUrl()));
 map.attributionControl.addAttribution('Traveler picks: <a href="https://en.wikivoyage.org" target="_blank">Wikivoyage</a> (CC BY-SA)');
 
-// --- Bottom sheet (phones) ----------------------------------------------------
-// On narrow screens the results panel is a sheet over a full-screen map with three
-// resting heights. Drag the handle/header, or tap it to toggle between half and full.
+// --- Phone views ----------------------------------------------------------------
+// Phones start on a simple home screen (no map). After a search they see a list, and the
+// floating button flips between the list and a full-screen map. Desktop shows both at once.
 const mobileQuery = window.matchMedia('(max-width: 760px)');
-const panel = document.getElementById('panel');
-const SHEET = {
-  peek: () => 132,
-  half: () => Math.round(innerHeight * 0.5),
-  full: () => innerHeight - 64,
-};
-let sheet = 'half';
+const viewToggle = document.getElementById('viewToggle');
 
-function setSheet(state) {
-  sheet = state;
-  panel.classList.remove('dragging');
-  document.documentElement.style.setProperty('--sheet-h', mobileQuery.matches ? SHEET[state]() + 'px' : '0px');
+function showList() {
+  document.body.classList.remove('home', 'mapview');
+  viewToggle.textContent = '🗺 Map';
 }
-setSheet('half');
-addEventListener('resize', () => setSheet(sheet));
-mobileQuery.addEventListener('change', () => { setSheet('half'); map.invalidateSize(); });
-
-panel.querySelectorAll('.grab, .panel-head').forEach(handle => {
-  let startY = 0, startH = 0, moved = false;
-  handle.addEventListener('pointerdown', e => {
-    if (!mobileQuery.matches || e.target.closest('button, select, a')) return;
-    startY = e.clientY; startH = panel.getBoundingClientRect().height; moved = false;
-    handle.setPointerCapture(e.pointerId);
-    panel.classList.add('dragging');
-  });
-  handle.addEventListener('pointermove', e => {
-    if (!handle.hasPointerCapture(e.pointerId)) return;
-    const dy = startY - e.clientY;
-    if (Math.abs(dy) > 4) moved = true;
-    const h = Math.min(SHEET.full(), Math.max(SHEET.peek(), startH + dy));
-    document.documentElement.style.setProperty('--sheet-h', h + 'px');
-  });
-  handle.addEventListener('pointerup', e => {
-    if (!handle.hasPointerCapture(e.pointerId)) return;
-    handle.releasePointerCapture(e.pointerId);
-    if (!moved) return setSheet(sheet === 'full' ? 'half' : 'full'); // a tap toggles
-    const h = panel.getBoundingClientRect().height;
-    const nearest = Object.keys(SHEET).sort((a, b) => Math.abs(SHEET[a]() - h) - Math.abs(SHEET[b]() - h))[0];
-    setSheet(nearest);
-  });
+function showMap() {
+  document.body.classList.remove('home');
+  document.body.classList.add('mapview');
+  viewToggle.textContent = '☰ List';
+  map.invalidateSize();
+}
+viewToggle.addEventListener('click', () => {
+  if (!document.body.classList.contains('mapview')) {
+    showMap();
+    if (!activeMarker && center) map.setView([center.lat, center.lon], 15);
+  } else showList();
 });
+document.getElementById('goHome').addEventListener('click', () => {
+  if (mobileQuery.matches) document.body.classList.add('home');
+});
+mobileQuery.addEventListener('change', () => map.invalidateSize());
 
-// Center the map on a point, nudged so it shows in the visible area above the sheet.
 function flyToPoint(latlng, zoom) {
-  if (!mobileQuery.matches) return map.flyTo(latlng, zoom, { duration: 0.6 });
-  if (sheet === 'full') setSheet('half');
-  const visibleTop = 110, visibleBottom = innerHeight - SHEET[sheet]();
-  const offsetY = innerHeight / 2 - (visibleTop + visibleBottom) / 2;
-  const target = map.unproject(map.project(latlng, zoom).add([0, offsetY]), zoom);
-  map.flyTo(target, zoom, { duration: 0.6 });
+  if (mobileQuery.matches && !document.body.classList.contains('mapview')) return map.setView(latlng, zoom);
+  map.flyTo(latlng, zoom, { duration: 0.6 });
 }
 
 const CITIES = [
@@ -319,16 +320,19 @@ const CITIES = [
   ['Nashville', 36.1627, -86.7816], ['New Orleans', 29.9511, -90.0715], ['San Diego', 32.7157, -117.1611],
 ];
 const citiesEl = document.getElementById('cities');
+const homeCitiesEl = document.getElementById('homeCities');
 CITIES.forEach(([name, lat, lon]) => {
-  const b = document.createElement('button');
-  b.textContent = name;
-  b.addEventListener('click', () => {
-    citiesEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    document.getElementById('q').value = name;
-    setCenter(lat, lon, false);
+  [citiesEl, homeCitiesEl].forEach(row => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.addEventListener('click', () => {
+      citiesEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
+      [...citiesEl.querySelectorAll('button')].find(x => x.textContent === name).classList.add('on');
+      document.getElementById('q').value = name;
+      setCenter(lat, lon, false);
+    });
+    row.appendChild(b);
   });
-  citiesEl.appendChild(b);
 });
 
 const pinIcon = (rank, active) => rank <= 10
@@ -341,6 +345,21 @@ const countEl = document.getElementById('count');
 const radiusEl = document.getElementById('radius');
 const sortEl = document.getElementById('sort');
 let center = null, shops = [], markers = L.layerGroup().addTo(map), meMarker = null;
+
+// Home-screen distance buttons mirror the radius dropdown.
+const homeRadiusEl = document.getElementById('homeRadius');
+[...radiusEl.options].forEach(o => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = o.textContent;
+  b.dataset.value = o.value;
+  b.addEventListener('click', () => { radiusEl.value = o.value; syncHomeRadius(); });
+  homeRadiusEl.appendChild(b);
+});
+function syncHomeRadius() {
+  homeRadiusEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.value === radiusEl.value));
+}
+syncHomeRadius();
 
 function setStatus(msg) { listEl.innerHTML = `<div id="status">${msg}</div>`; }
 
@@ -720,7 +739,7 @@ function render() {
       if (b) toggleVote(s.id, b.dataset.tag);
     });
     const m = L.marker([s.lat, s.lon], { icon: pinIcon(rank), zIndexOffset: 1000 - rank, title: t.name })
-      .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`, { autoPan: !mobileQuery.matches });
+      .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away · <a href="${dir}" target="_blank" rel="noopener">Directions</a>`);
     markers.addLayer(m);
     const select = () => {
       document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
@@ -731,13 +750,13 @@ function render() {
     };
     card.addEventListener('click', e => {
       if (e.target.closest('a, button, .votes')) return; // links and buttons do their own thing
+      if (mobileQuery.matches) showMap(); // on phones, tapping a shop shows it on the map
       select();
       flyToPoint([s.lat, s.lon], 17);
     });
     m.on('click', () => {
       select();
-      if (mobileQuery.matches && sheet === 'peek') setSheet('half');
-      card.scrollIntoView({ behavior: 'smooth', block: mobileQuery.matches ? 'start' : 'center' });
+      if (!mobileQuery.matches) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     listEl.appendChild(card);
   });
@@ -764,12 +783,13 @@ function setCenter(lat, lon, clearCity = true) {
   if (meMarker) meMarker.remove();
   meMarker = L.marker([lat, lon], { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18] }), zIndexOffset: 2000 })
     .addTo(map).bindPopup('Search center');
-  if (mobileQuery.matches && sheet !== 'half') setSheet('half');
+  showList();
   flyToPoint([lat, lon], 15);
   findShops();
 }
 
 document.querySelectorAll('[data-locate]').forEach(b => b.addEventListener('click', () => {
+  showList();
   if (!navigator.geolocation) return setStatus('Your browser doesn’t support location. Search a place instead.');
   document.getElementById('q').value = '';
   countEl.textContent = 'Finding you…';
@@ -787,6 +807,8 @@ document.getElementById('search').addEventListener('submit', async e => {
   const q = input.value.trim();
   if (!q) return;
   input.blur(); // closes the phone keyboard so the results are visible
+  showList();
+  countEl.textContent = 'Searching…';
   setStatus('Looking that up…');
   try {
     const [hit] = await nominatim(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
@@ -795,7 +817,16 @@ document.getElementById('search').addEventListener('submit', async e => {
   } catch { setStatus('Search is unavailable right now. Please try again.'); }
 });
 
-radiusEl.addEventListener('change', findShops);
+// The home-screen search just hands off to the main search box.
+document.getElementById('homeSearch').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = document.getElementById('homeQ').value.trim();
+  if (!q) return;
+  document.getElementById('q').value = q;
+  document.getElementById('search').requestSubmit();
+});
+
+radiusEl.addEventListener('change', () => { syncHomeRadius(); findShops(); });
 sortEl.addEventListener('change', () => shops.length && render());
 </script>
 </body>
