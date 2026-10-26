@@ -79,6 +79,17 @@
   .cities button { padding: 5px 12px; font-size: .85rem; white-space: nowrap; background: var(--chip); border-color: transparent; }
   .cities button:hover, .cities button.on { background: var(--accent); color: var(--accent-ink); }
 
+  /* "Known for" votes and traveler picks */
+  .known { font-size: .82rem; margin-top: 6px; }
+  .known b { color: var(--accent); font-weight: 600; }
+  .votes { display: none; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .card.voting .votes { display: flex; }
+  .vote { padding: 3px 9px; font-size: .78rem; background: var(--panel); border: 1px solid var(--line); }
+  .vote.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .vote b { font-weight: 600; margin-left: 2px; }
+  .tag.pick { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .bestnote { padding: 10px 16px; font-size: .85rem; color: var(--muted); border-bottom: 1px solid var(--line); }
+
   /* Map markers */
   .pin {
     width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
@@ -130,6 +141,7 @@
   </div>
 </header>
 <nav class="cities" id="cities" aria-label="Popular cities"><span class="label">Popular:</span></nav>
+<nav class="cities" id="bestfor" aria-label="Best for" hidden><span class="label">Best for:</span></nav>
 <main>
   <div id="list"><div id="status">Tap “Use my location” or search a place to find coffee nearby.</div></div>
   <div id="map"></div>
@@ -138,6 +150,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 const map = L.map('map', { zoomSnap: 0.5 }).setView([39.5, -98.35], 4);
 
@@ -149,6 +162,7 @@ const basemap = L.maplibreGL({
   attribution: '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
 }).addTo(map);
 darkQuery.addEventListener('change', () => basemap.getMaplibreMap().setStyle(styleUrl()));
+map.attributionControl.addAttribution('Traveler picks: <a href="https://en.wikivoyage.org" target="_blank">Wikivoyage</a> (CC BY-SA)');
 
 const CITIES = [
   ['New York', 40.7411, -73.9897], ['Los Angeles', 34.0522, -118.2437], ['Chicago', 41.8827, -87.6233],
@@ -202,7 +216,142 @@ function score(s) {
   if (t.website || t['contact:website']) pts += 1;
   if (t.outdoor_seating === 'yes') pts += 0.5;
   if (t.internet_access && t.internet_access !== 'no') pts += 0.5;
+  if (s.pick) pts += 2;                                       // recommended on Wikivoyage
+  const votes = Object.values(counts[s.id] || {}).reduce((a, b) => a + b, 0);
+  pts += Math.min(3, Math.log2(1 + votes));                   // community votes, capped
   return pts - (s.dist / Number(radiusEl.value)) * 3;
+}
+
+// --- Community "Known for" votes (Supabase) --------------------------------
+// Paste your Supabase project URL and publishable (anon) key here. Both are meant to be
+// public: the rules in setup.sql decide what visitors may do. Leave empty to hide voting.
+const SUPABASE_URL = '';
+const SUPABASE_KEY = '';
+
+const VOTE_TAGS = [
+  ['cappuccino', '☕', 'Cappuccino'], ['latte', '🥛', 'Latte'], ['iced', '🧊', 'Iced coffee'],
+  ['coldbrew', '🫗', 'Cold brew'], ['espresso', '⚡', 'Espresso'], ['pourover', '🫖', 'Pour-over'],
+  ['matcha', '🍵', 'Matcha'], ['work', '💻', 'Good for working'],
+];
+const db = SUPABASE_URL && window.supabase ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+let counts = {}, myVotes = new Set(), votesLoaded = new Set(), bestFor = '';
+
+async function loadVotes(ids) {
+  ids = ids.filter(id => !votesLoaded.has(id));
+  if (!db || !ids.length) return false;
+  ids.forEach(id => votesLoaded.add(id));
+  const { data: { session } } = await db.auth.getSession();
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const [all, mine] = await Promise.all([
+      db.from('place_tag_counts').select('place_id,tag,votes').in('place_id', chunk),
+      session ? db.from('votes').select('place_id,tag').in('place_id', chunk) : { data: [] },
+    ]);
+    (all.data || []).forEach(r => (counts[r.place_id] ||= {})[r.tag] = r.votes);
+    (mine.data || []).forEach(r => myVotes.add(r.place_id + ':' + r.tag));
+  }
+  return true;
+}
+
+async function toggleVote(id, tag) {
+  const key = id + ':' + tag, had = myVotes.has(key), c = (counts[id] ||= {});
+  const show = voted => {
+    voted ? myVotes.add(key) : myVotes.delete(key);
+    c[tag] = Math.max(0, (c[tag] || 0) + (voted ? 1 : -1));
+    refreshVotes(id);
+  };
+  show(!had); // update the screen right away, then save
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session) { const r = await db.auth.signInAnonymously(); if (r.error) throw r.error; }
+    const res = had
+      ? await db.from('votes').delete().match({ place_id: id, tag })
+      : await db.from('votes').insert({ place_id: id, tag });
+    if (res.error) throw res.error;
+  } catch {
+    show(had);
+    alert('Sorry, your vote couldn’t be saved. Please try again.');
+  }
+}
+
+function knownHtml(id) {
+  const top = VOTE_TAGS.map(([tag, emoji, label]) => [emoji, label, counts[id]?.[tag] || 0])
+    .filter(x => x[2] > 0).sort((a, b) => b[2] - a[2]).slice(0, 3);
+  return top.length ? `Known for: ${top.map(([e, l, n]) => `${e} ${l} <b>${n}</b>`).join(' · ')}` : '';
+}
+function chipsHtml(id) {
+  return VOTE_TAGS.map(([tag, emoji, label]) => {
+    const n = counts[id]?.[tag] || 0, on = myVotes.has(id + ':' + tag);
+    return `<button class="vote${on ? ' on' : ''}" data-tag="${tag}" title="${on ? 'Tap to remove your vote' : `Great ${label.toLowerCase()} here? Tap to agree`}">${emoji} ${label}${n ? ` <b>${n}</b>` : ''}</button>`;
+  }).join('');
+}
+function refreshVotes(id) {
+  const card = listEl.querySelector(`.card[data-id="${id}"]`);
+  if (!card) return;
+  card.querySelector('.known').innerHTML = knownHtml(id);
+  card.querySelector('.votes').innerHTML = chipsHtml(id);
+}
+
+const bestForEl = document.getElementById('bestfor');
+if (db) {
+  bestForEl.hidden = false;
+  [['', '', 'Anything']].concat(VOTE_TAGS).forEach(([tag, emoji, label]) => {
+    const b = document.createElement('button');
+    b.textContent = `${emoji} ${label}`.trim();
+    if (!tag) b.classList.add('on');
+    b.addEventListener('click', () => {
+      bestForEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      bestFor = tag;
+      if (shops.length) render();
+    });
+    bestForEl.appendChild(b);
+  });
+}
+
+// --- Traveler picks (Wikivoyage) --------------------------------------------
+// Wikivoyage city guides list the cafés travelers recommend. We match those listings to
+// nearby shops by name (and location when given) and show a badge. Content is CC BY-SA.
+const WV_API = 'https://en.wikivoyage.org/w/api.php?origin=*&format=json&';
+let picks = [];
+
+async function fetchTravelerPicks(c) {
+  const key = `wv:${c.lat.toFixed(2)},${c.lon.toFixed(2)}`;
+  const cached = readCache(key);
+  if (cached) return cached;
+  const geo = await (await fetch(WV_API + `action=query&list=geosearch&gscoord=${c.lat}|${c.lon}&gsradius=10000&gslimit=10`)).json();
+  const titles = (geo.query?.geosearch || []).map(g => g.title);
+  const found = [];
+  if (titles.length) {
+    const res = await (await fetch(WV_API + 'action=query&prop=revisions&rvprop=content&rvslots=main&titles=' + encodeURIComponent(titles.join('|')))).json();
+    for (const page of Object.values(res.query.pages)) {
+      const text = page.revisions?.[0]?.slots?.main?.['*'] || '';
+      for (const m of text.matchAll(/\{\{\s*(?:drink|eat|listing)\b([\s\S]*?)\}\}/gi)) {
+        const field = k => (m[1].match(new RegExp(`\\|\\s*${k}\\s*=\\s*([^|]*)`)) || [])[1]?.trim();
+        const name = field('name');
+        if (name) found.push({ name: name.replace(/&nbsp;.*/, ''), lat: Number(field('lat')) || null, lon: Number(field('long')) || null, page: page.title });
+      }
+    }
+  }
+  writeCache(key, found);
+  return found;
+}
+
+// Names must match exactly after dropping generic words ("Café Grumpy" = "Cafe Grumpy"),
+// branch suffixes ("Stumptown – Pearl District") and punctuation. Looser matching
+// mistook e.g. "Bryant Park Café" for "Bryant Park Grill".
+const normName = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/\s+[-–—(].*$/, '')
+  .replace(/\b(the|cafe|caffe|coffee|roasters?|roasting|company|co|bar|shop|house|and)\b/g, '')
+  .replace(/[^a-z0-9]/g, '');
+
+function markPicks(list) {
+  const named = new Map();
+  picks.forEach(p => { const n = normName(p.name); if (n.length >= 3 && !named.has(n)) named.set(n, p); });
+  list.forEach(s => {
+    const p = named.get(normName(s.tags.name || ''));
+    s.pick = p && (!p.lat || !p.lon || distanceMeters(p, s) < 500) ? p : null;
+  });
 }
 
 // --- Data loading ---------------------------------------------------------
@@ -269,13 +418,22 @@ async function fetchFull(c, r) {
   }
 }
 
+let rawShops = [], loadingMore = false;
+
 function useShops(list) {
+  rawShops = list;
   shops = list
     .filter(s => s.tags.name)
     .map(s => ({ ...s, dist: distanceMeters(center, s) }))
     .filter(s => s.dist <= Number(radiusEl.value));
+  markPicks(shops);
   shops.forEach(s => s.score = score(s));
   render();
+  // Fetch vote counts for any shops we haven't seen yet, then re-rank with them.
+  const id = searchId;
+  loadVotes(shops.map(s => s.id)).then(changed => {
+    if (changed && id === searchId) { shops.forEach(s => s.score = score(s)); render(); }
+  }).catch(() => {});
 }
 
 function setNote(msg) {
@@ -289,16 +447,27 @@ function setNote(msg) {
 async function findShops() {
   if (!center) return;
   const id = ++searchId, c = center, r = radiusEl.value, key = cacheKey(c, r);
+  loadingMore = false;
+
+  // Traveler picks load alongside the shops and get applied whenever they arrive.
+  picks = [];
+  fetchTravelerPicks(c).then(p => {
+    if (id !== searchId || !p.length) return;
+    picks = p;
+    if (rawShops.length) useShops(rawShops);
+  }).catch(() => {});
 
   const cached = readCache(key);
   if (cached) return useShops(cached);
 
+  rawShops = [];
   setStatus('Brewing results…');
   let quick = [];
   try {
     quick = await fetchQuick(c, r);
     if (id !== searchId) return;
-    if (quick.length) { useShops(quick); setNote('Finding more coffee shops…'); }
+    loadingMore = quick.length > 0;
+    if (quick.length) useShops(quick);
     else setStatus('Brewing results… this can take up to a minute.');
   } catch {}
 
@@ -309,9 +478,11 @@ async function findShops() {
     const seen = new Set(full.map(s => s.id));
     const merged = full.concat(quick.filter(s => !seen.has(s.id)));
     writeCache(key, merged);
+    loadingMore = false;
     useShops(merged);
   } catch {
     if (id !== searchId) return;
+    loadingMore = false;
     if (quick.length) setNote('');
     else setStatus('Couldn’t reach the coffee map right now. Please try again in a moment.');
   }
@@ -320,7 +491,14 @@ async function findShops() {
 function render() {
   markers.clearLayers();
   if (!shops.length) { setStatus('No coffee shops found here. Try a bigger radius.'); return; }
-  const sorted = [...shops].sort(sortEl.value === 'distance' ? (a, b) => a.dist - b.dist : (a, b) => b.score - a.score);
+  const votesFor = s => counts[s.id]?.[bestFor] || 0;
+  const sorted = [...shops].sort(
+    bestFor ? (a, b) => votesFor(b) - votesFor(a) || b.score - a.score
+    : sortEl.value === 'distance' ? (a, b) => a.dist - b.dist
+    : (a, b) => b.score - a.score);
+  // Re-rendering shouldn't lose the reader's place or close an open vote panel.
+  const scroll = listEl.scrollTop;
+  const voting = new Set([...listEl.querySelectorAll('.card.voting')].map(c => c.dataset.id));
   listEl.innerHTML = '';
   sorted.forEach((s, i) => {
     const t = s.tags;
@@ -328,6 +506,7 @@ function render() {
     const site = t.website || t['contact:website'];
     const dir = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`;
     const tags = [];
+    if (s.pick) tags.push(`<a class="tag pick" href="https://en.wikivoyage.org/wiki/${encodeURIComponent(s.pick.page.replace(/ /g, '_'))}" target="_blank" rel="noopener" title="Recommended in the Wikivoyage travel guide">✈️ Traveler pick</a>`);
     if (!t.brand) tags.push('<span class="tag indie">Local</span>');
     else tags.push(`<span class="tag">${esc(t.brand)}</span>`);
     if (t.outdoor_seating === 'yes') tags.push('<span class="tag">Outdoor seating</span>');
@@ -335,24 +514,37 @@ function render() {
     if (t.opening_hours) tags.push(`<span class="tag">${esc(t.opening_hours)}</span>`);
 
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card' + (voting.has(s.id) ? ' voting' : '');
+    card.dataset.id = s.id;
     card.innerHTML = `
       <div class="rank">${i + 1}</div>
       <div>
         <div class="name">${esc(t.name)}</div>
         ${addr ? `<div class="meta">${esc(addr)}</div>` : ''}
         <div class="tags">${tags.join('')}</div>
+        <div class="known">${knownHtml(s.id)}</div>
         <div class="links" style="margin-top:6px">
           <a href="${dir}" target="_blank" rel="noopener">Directions</a>
           ${site ? `<a href="${esc(site)}" target="_blank" rel="noopener">Website</a>` : ''}
+          ${db ? '<a href="#" class="vote-toggle">👍 What’s it known for?</a>' : ''}
         </div>
+        <div class="votes">${db ? chipsHtml(s.id) : ''}</div>
       </div>
       <div class="dist">${fmtMiles(s.dist)}</div>`;
+    card.querySelector('.vote-toggle')?.addEventListener('click', e => {
+      e.preventDefault();
+      card.classList.toggle('voting');
+    });
+    card.querySelector('.votes').addEventListener('click', e => {
+      const b = e.target.closest('.vote');
+      if (b) toggleVote(s.id, b.dataset.tag);
+    });
     const rank = i + 1;
     const m = L.marker([s.lat, s.lon], { icon: pinIcon(rank), zIndexOffset: 1000 - rank, title: t.name })
       .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`);
     markers.addLayer(m);
-    card.addEventListener('click', () => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('a, .votes')) return; // links and vote buttons do their own thing
       document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
       if (activeMarker) activeMarker.setIcon(pinIcon(activeMarker.rank));
@@ -362,6 +554,19 @@ function render() {
     m.on('click', () => { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.click(); });
     listEl.appendChild(card);
   });
+
+  if (bestFor) {
+    const [, emoji, label] = VOTE_TAGS.find(x => x[0] === bestFor);
+    const voted = shops.filter(s => votesFor(s) > 0).length;
+    const note = document.createElement('div');
+    note.className = 'bestnote';
+    note.textContent = voted
+      ? `${emoji} Sorted by ${label.toLowerCase()} votes: ${voted} shop${voted === 1 ? '' : 's'} nearby ${voted === 1 ? 'has' : 'have'} votes.`
+      : `${emoji} No one has voted for ${label.toLowerCase()} around here yet. Know a great spot? Tap “What’s it known for?” on it.`;
+    listEl.prepend(note);
+  }
+  if (loadingMore) setNote('Finding more coffee shops…');
+  listEl.scrollTop = scroll;
 }
 
 function setCenter(lat, lon, clearCity = true) {
