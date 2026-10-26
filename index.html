@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf6f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1310" media="(prefers-color-scheme: dark)">
 <title>Coffee Shops By Me</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -19,11 +21,14 @@
     --accent-ink: #ffffff;
     --chip: #f3e8dc;
     --good: #2f7d4f;
+    --shadow: 0 2px 12px rgba(43, 29, 20, .14);
+    --sheet-h: 0px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #1a1310; --panel: #241a15; --ink: #f4e9df; --muted: #b39d8b;
       --line: #3a2b22; --accent: #d98a5c; --accent-ink: #1a1310; --chip: #33251d; --good: #6fcf97;
+      --shadow: 0 2px 14px rgba(0, 0, 0, .45);
     }
   }
   * { box-sizing: border-box; }
@@ -32,65 +37,102 @@
     background: var(--bg); color: var(--ink);
     font-family: Inter, system-ui, sans-serif;
     display: flex; flex-direction: column;
+    -webkit-tap-highlight-color: transparent;
   }
-  header {
-    padding: 16px; border-bottom: 1px solid var(--line); background: var(--panel);
-    display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-  }
-  h1 { font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: 1.5rem; margin: 0; }
-  h1 span { color: var(--accent); }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   button, input, select {
     font: inherit; font-size: .95rem; border-radius: 999px; border: 1px solid var(--line);
     padding: 8px 14px; background: var(--panel); color: var(--ink);
   }
   button { cursor: pointer; }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  form { display: flex; gap: 6px; }
-  input[type=search] { min-width: 0; width: 200px; }
-  main { flex: 1; display: grid; grid-template-columns: 380px 1fr; min-height: 0; }
-  #list { overflow-y: auto; border-right: 1px solid var(--line); }
+
+  /* --- Top bar: brand + one search box with "Near me" inside --- */
+  .topbar {
+    padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    display: flex; gap: 16px; align-items: center;
+  }
+  .brand { font-family: Fraunces, Georgia, serif; font-weight: 800; font-size: 1.4rem; margin: 0; white-space: nowrap; }
+  .brand b { color: var(--accent); font-weight: 800; }
+  .searchbox {
+    flex: 1; max-width: 560px; display: flex; align-items: center; gap: 4px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 4px 4px 14px;
+  }
+  .searchbox:focus-within { border-color: var(--accent); }
+  .searchbox .icon { font-size: 1rem; opacity: .7; }
+  .searchbox input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 8px 6px; font-size: 1rem; outline: none; }
+  .searchbox input::-webkit-search-cancel-button { display: none; }
+  .locate { background: var(--accent); color: var(--accent-ink); border: 0; font-weight: 600; padding: 8px 14px; white-space: nowrap; }
+
+  /* --- Horizontal chip rows (cities, best for) --- */
+  .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips .label { color: var(--muted); font-size: .85rem; white-space: nowrap; margin-right: 2px; }
+  .chips button { padding: 6px 12px; font-size: .85rem; white-space: nowrap; background: var(--chip); border-color: transparent; flex: none; }
+  .chips button:hover, .chips button.on { background: var(--accent); color: var(--accent-ink); }
+  #cities { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+
+  /* --- Results panel + map --- */
+  main { flex: 1; display: grid; grid-template-columns: 400px 1fr; min-height: 0; }
+  #panel { display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
+  .grab { display: none; }
+  .panel-head { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); background: var(--panel); display: grid; gap: 10px; }
+  .summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #count { font-weight: 600; font-size: .95rem; }
+  .filters { display: flex; gap: 6px; flex: none; }
+  .filters select { padding: 5px 10px; font-size: .85rem; background: var(--bg); }
+  #list { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
   #map { min-height: 300px; }
-  #status { padding: 16px; color: var(--muted); }
+  #status { padding: 20px 16px; color: var(--muted); }
+
+  .welcome { padding: 28px 20px; text-align: center; }
+  .welcome h2 { font-family: Fraunces, Georgia, serif; font-size: 1.5rem; margin: 0 0 8px; }
+  .welcome p { color: var(--muted); margin: 0 0 18px; line-height: 1.45; }
+  .welcome .big { padding: 12px 22px; font-size: 1rem; }
+  .welcome .hint { margin: 14px 0 0; font-size: .85rem; }
+
+  /* --- Shop cards --- */
   .card {
     padding: 14px 16px; border-bottom: 1px solid var(--line); cursor: pointer;
-    display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: start;
+    display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start;
   }
   .card:hover, .card.active { background: var(--chip); }
   .rank {
     width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
-    display: grid; place-items: center; font-weight: 600; font-size: .85rem;
+    display: grid; place-items: center; font-weight: 600; font-size: .8rem;
   }
-  .name { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 1.05rem; }
-  .meta { color: var(--muted); font-size: .85rem; margin-top: 2px; }
-  .dist { font-weight: 600; font-size: .9rem; white-space: nowrap; }
-  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .tag { background: var(--chip); border-radius: 999px; padding: 2px 8px; font-size: .75rem; }
+  .card-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .name { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 1.08rem; line-height: 1.25; }
+  .dist { font-weight: 600; font-size: .88rem; white-space: nowrap; color: var(--muted); }
+  .meta { color: var(--muted); font-size: .85rem; margin-top: 3px; }
+  .meta .closed { color: #b4442c; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .tags:empty { display: none; }
+  .tag { background: var(--chip); border-radius: 999px; padding: 3px 9px; font-size: .75rem; }
   .card:hover .tag, .card.active .tag { background: var(--panel); }
   .tag.indie { color: var(--good); font-weight: 600; }
-  .links a { color: var(--accent); font-size: .85rem; margin-right: 10px; }
-  /* Quick-pick cities */
-  .cities {
-    display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px; background: var(--panel);
-    border-bottom: 1px solid var(--line); scrollbar-width: none;
-  }
-  .cities::-webkit-scrollbar { display: none; }
-  .cities .label { color: var(--muted); font-size: .85rem; align-self: center; white-space: nowrap; margin-right: 4px; }
-  .cities button { padding: 5px 12px; font-size: .85rem; white-space: nowrap; background: var(--chip); border-color: transparent; }
-  .cities button:hover, .cities button.on { background: var(--accent); color: var(--accent-ink); }
-
-  /* "Known for" votes and traveler picks */
-  .known { font-size: .82rem; margin-top: 6px; }
+  .tag.pick { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .known { font-size: .82rem; margin-top: 8px; }
+  .known:empty { display: none; }
   .known b { color: var(--accent); font-weight: 600; }
-  .votes { display: none; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: .82rem; font-weight: 500;
+    border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .card.voting .vote-toggle { border-color: var(--accent); color: var(--accent); }
+
+  /* "Known for" vote buttons */
+  .votes { display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding: 10px; border-radius: 12px; background: var(--bg); }
   .card.voting .votes { display: flex; }
-  .vote { padding: 3px 9px; font-size: .78rem; background: var(--panel); border: 1px solid var(--line); }
+  .votes .hint { width: 100%; font-size: .78rem; color: var(--muted); }
+  .vote { padding: 5px 10px; font-size: .8rem; background: var(--panel); border: 1px solid var(--line); }
   .vote.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .vote b { font-weight: 600; margin-left: 2px; }
-  .tag.pick { color: var(--accent); font-weight: 600; text-decoration: none; }
   .bestnote { padding: 10px 16px; font-size: .85rem; color: var(--muted); border-bottom: 1px solid var(--line); }
 
-  /* Map markers */
+  /* --- Map markers --- */
   .pin {
     width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
     background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35);
@@ -104,46 +146,95 @@
   @keyframes pulse { 70% { box-shadow: 0 0 0 16px rgba(37,99,235,0); } 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } }
 
   /* Softer Leaflet chrome */
-  .leaflet-control-zoom { border: 0 !important; box-shadow: 0 2px 8px rgba(0,0,0,.15) !important; border-radius: 12px !important; overflow: hidden; }
+  .leaflet-control-zoom { border: 0 !important; box-shadow: var(--shadow) !important; border-radius: 12px !important; overflow: hidden; }
   .leaflet-control-zoom a { background: var(--panel) !important; color: var(--ink) !important; border-color: var(--line) !important; }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); border-radius: 12px; }
   .leaflet-popup-content { font-family: Inter, sans-serif; margin: 10px 14px; }
-  .leaflet-control-attribution { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; color: var(--muted) !important; }
+  .leaflet-control-attribution { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; color: var(--muted) !important; font-size: 10px; }
   .leaflet-control-attribution a { color: var(--muted) !important; }
 
+  /* --- Phones: full-screen map, floating search, draggable bottom sheet --- */
   @media (max-width: 760px) {
-    main { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
-    #map { order: -1; }
-    #list { border-right: 0; }
-    input[type=search] { width: 140px; }
+    body { overflow: hidden; }
+    .topbar {
+      position: fixed; z-index: 1001; top: 0; left: 0; right: 0;
+      padding: calc(10px + env(safe-area-inset-top)) 12px 0; background: none; border: 0;
+    }
+    .brand { display: none; }
+    .searchbox { max-width: none; background: var(--panel); box-shadow: var(--shadow); border-color: transparent; padding-left: 12px; }
+    .searchbox .icon::before { content: '☕'; }
+    .searchbox .icon { font-size: 0; }
+    .searchbox .icon::before { font-size: 1.1rem; }
+    .locate .locate-label { display: none; }
+    .locate { padding: 9px 12px; }
+    #cities {
+      position: fixed; z-index: 1001; left: 0; right: 0; top: calc(66px + env(safe-area-inset-top));
+      padding: 0 12px 8px; background: none; border: 0;
+    }
+    #cities .label { display: none; }
+    #cities button { background: var(--panel); box-shadow: var(--shadow); }
+    #cities button.on { background: var(--accent); }
+    main { position: fixed; inset: 0; display: block; }
+    #map { position: absolute; inset: 0; }
+    #panel {
+      position: fixed; z-index: 1000; left: 0; right: 0; bottom: 0; height: var(--sheet-h);
+      border: 0; border-radius: 20px 20px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,.18); overflow: hidden;
+      transition: height .28s cubic-bezier(.2, .8, .2, 1);
+    }
+    #panel.dragging { transition: none; }
+    .grab { display: block; padding: 10px 0 2px; background: var(--panel); touch-action: none; cursor: grab; }
+    .grab span { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto; }
+    .panel-head { padding: 6px 16px 10px; touch-action: none; }
+    #list { padding-bottom: env(safe-area-inset-bottom); }
+    .card { padding: 16px 14px; gap: 10px; }
+    .btn { padding: 8px 11px; font-size: .82rem; }
+    .vote { padding: 7px 12px; font-size: .85rem; }
+    .leaflet-top { top: calc(110px + env(safe-area-inset-top)); }
+    .leaflet-bottom { bottom: var(--sheet-h); }
+    .leaflet-control-zoom { display: none; }
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>☕ Coffee Shops <span>By Me</span></h1>
-  <div class="controls">
-    <button class="primary" id="locate">📍 Use my location</button>
-    <form id="search">
-      <input type="search" id="q" placeholder="Or enter a city / address">
-      <button type="submit">Go</button>
-    </form>
-    <select id="radius" aria-label="Search radius">
-      <option value="800">0.5 mi</option>
-      <option value="1600" selected>1 mi</option>
-      <option value="4800">3 mi</option>
-      <option value="8000">5 mi</option>
-    </select>
-    <select id="sort" aria-label="Sort">
-      <option value="best" selected>Best match</option>
-      <option value="distance">Closest</option>
-    </select>
-  </div>
+<header class="topbar">
+  <h1 class="brand">☕ Coffee Shops <b>By Me</b></h1>
+  <form id="search" class="searchbox" role="search">
+    <span class="icon" aria-hidden="true">🔍</span>
+    <input type="search" id="q" placeholder="Search a city or address" enterkeyhint="search" autocomplete="off" aria-label="Search a city or address">
+    <button type="button" class="locate" data-locate aria-label="Use my location">📍<span class="locate-label"> Near me</span></button>
+  </form>
 </header>
-<nav class="cities" id="cities" aria-label="Popular cities"><span class="label">Popular:</span></nav>
-<nav class="cities" id="bestfor" aria-label="Best for" hidden><span class="label">Best for:</span></nav>
+<nav class="chips" id="cities" aria-label="Popular cities"><span class="label">Popular:</span></nav>
 <main>
-  <div id="list"><div id="status">Tap “Use my location” or search a place to find coffee nearby.</div></div>
+  <section id="panel" aria-label="Coffee shops">
+    <div class="grab" aria-hidden="true"><span></span></div>
+    <div class="panel-head">
+      <div class="summary">
+        <span id="count">Coffee near you</span>
+        <span class="filters">
+          <select id="radius" aria-label="Search radius">
+            <option value="800">0.5 mi</option>
+            <option value="1600" selected>1 mi</option>
+            <option value="4800">3 mi</option>
+            <option value="8000">5 mi</option>
+          </select>
+          <select id="sort" aria-label="Sort">
+            <option value="best" selected>Best</option>
+            <option value="distance">Closest</option>
+          </select>
+        </span>
+      </div>
+      <nav class="chips" id="bestfor" aria-label="Best for" hidden><span class="label">Best for:</span></nav>
+    </div>
+    <div id="list">
+      <div class="welcome">
+        <h2>Find great coffee near you</h2>
+        <p>Local favorites, traveler picks, and what people say each shop does best.</p>
+        <button class="primary big" data-locate>📍 Use my location</button>
+        <p class="hint">Or search a city above, or tap a popular one.</p>
+      </div>
+    </div>
+  </section>
   <div id="map"></div>
 </main>
 
@@ -163,6 +254,62 @@ const basemap = L.maplibreGL({
 }).addTo(map);
 darkQuery.addEventListener('change', () => basemap.getMaplibreMap().setStyle(styleUrl()));
 map.attributionControl.addAttribution('Traveler picks: <a href="https://en.wikivoyage.org" target="_blank">Wikivoyage</a> (CC BY-SA)');
+
+// --- Bottom sheet (phones) ----------------------------------------------------
+// On narrow screens the results panel is a sheet over a full-screen map with three
+// resting heights. Drag the handle/header, or tap it to toggle between half and full.
+const mobileQuery = window.matchMedia('(max-width: 760px)');
+const panel = document.getElementById('panel');
+const SHEET = {
+  peek: () => 132,
+  half: () => Math.round(innerHeight * 0.5),
+  full: () => innerHeight - 64,
+};
+let sheet = 'half';
+
+function setSheet(state) {
+  sheet = state;
+  panel.classList.remove('dragging');
+  document.documentElement.style.setProperty('--sheet-h', mobileQuery.matches ? SHEET[state]() + 'px' : '0px');
+}
+setSheet('half');
+addEventListener('resize', () => setSheet(sheet));
+mobileQuery.addEventListener('change', () => { setSheet('half'); map.invalidateSize(); });
+
+panel.querySelectorAll('.grab, .panel-head').forEach(handle => {
+  let startY = 0, startH = 0, moved = false;
+  handle.addEventListener('pointerdown', e => {
+    if (!mobileQuery.matches || e.target.closest('button, select, a')) return;
+    startY = e.clientY; startH = panel.getBoundingClientRect().height; moved = false;
+    handle.setPointerCapture(e.pointerId);
+    panel.classList.add('dragging');
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    const dy = startY - e.clientY;
+    if (Math.abs(dy) > 4) moved = true;
+    const h = Math.min(SHEET.full(), Math.max(SHEET.peek(), startH + dy));
+    document.documentElement.style.setProperty('--sheet-h', h + 'px');
+  });
+  handle.addEventListener('pointerup', e => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    if (!moved) return setSheet(sheet === 'full' ? 'half' : 'full'); // a tap toggles
+    const h = panel.getBoundingClientRect().height;
+    const nearest = Object.keys(SHEET).sort((a, b) => Math.abs(SHEET[a]() - h) - Math.abs(SHEET[b]() - h))[0];
+    setSheet(nearest);
+  });
+});
+
+// Center the map on a point, nudged so it shows in the visible area above the sheet.
+function flyToPoint(latlng, zoom) {
+  if (!mobileQuery.matches) return map.flyTo(latlng, zoom, { duration: 0.6 });
+  if (sheet === 'full') setSheet('half');
+  const visibleTop = 110, visibleBottom = innerHeight - SHEET[sheet]();
+  const offsetY = innerHeight / 2 - (visibleTop + visibleBottom) / 2;
+  const target = map.unproject(map.project(latlng, zoom).add([0, offsetY]), zoom);
+  map.flyTo(target, zoom, { duration: 0.6 });
+}
 
 const CITIES = [
   ['New York', 40.7411, -73.9897], ['Los Angeles', 34.0522, -118.2437], ['Chicago', 41.8827, -87.6233],
@@ -190,6 +337,7 @@ const pinIcon = (rank, active) => rank <= 10
 let activeMarker = null;
 
 const listEl = document.getElementById('list');
+const countEl = document.getElementById('count');
 const radiusEl = document.getElementById('radius');
 const sortEl = document.getElementById('sort');
 let center = null, shops = [], markers = L.layerGroup().addTo(map), meMarker = null;
@@ -204,6 +352,36 @@ function distanceMeters(a, b) {
 }
 const fmtMiles = m => (m / 1609.34 < 0.1 ? `${Math.round(m * 3.281)} ft` : `${(m / 1609.34).toFixed(1)} mi`);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Turns OpenStreetMap hours like "Mo-Fr 07:00-17:00; Sa 08:00-14:00" into "Today 7 AM–5 PM".
+// Returns '' for formats it doesn't understand rather than guessing.
+const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const fmtTime = m => {
+  m %= 1440;
+  const h = Math.floor(m / 60), mm = m % 60;
+  return `${h % 12 || 12}${mm ? ':' + String(mm).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`;
+};
+function todayHours(spec) {
+  if (!spec) return '';
+  if (spec.trim() === '24/7') return 'Open 24 hours';
+  const today = (new Date().getDay() + 6) % 7; // Monday = 0
+  let found = null;
+  for (const rule of spec.split(';').map(r => r.trim()).filter(Boolean)) {
+    if (/^(PH|SH)\b/.test(rule)) continue; // holiday rules
+    const m = rule.match(/^(?:([A-Za-z,\- ]+?)\s+)?((?:\d\d:\d\d-\d\d:\d\d(?:,\s*)?)+|off|closed)$/);
+    if (!m) return '';
+    let applies = !m[1];
+    for (const part of (m[1] || '').split(',').map(p => p.trim()).filter(Boolean)) {
+      const [a, b = a] = part.split('-').map(d => DAYS.indexOf(d));
+      if (a < 0 || b < 0) return '';
+      if (a <= b ? today >= a && today <= b : today >= a || today <= b) applies = true;
+    }
+    if (applies) found = /off|closed/.test(m[2]) ? [] : m[2].split(',').map(r => r.trim().split('-').map(toMin));
+  }
+  if (!found || !found.length) return found ? 'Closed today' : '';
+  return 'Today ' + found.map(([s, e]) => `${fmtTime(s)}–${fmtTime(e)}`).join(', ');
+}
 
 // "Best" score: favors independent shops, coffee-focused spots, and well-documented listings,
 // with a gentle penalty for distance. OpenStreetMap has no star ratings, so this is a heuristic.
@@ -280,9 +458,9 @@ function knownHtml(id) {
   return top.length ? `Known for: ${top.map(([e, l, n]) => `${e} ${l} <b>${n}</b>`).join(' · ')}` : '';
 }
 function chipsHtml(id) {
-  return VOTE_TAGS.map(([tag, emoji, label]) => {
+  return '<span class="hint">What is this place great for? Tap all that apply.</span>' + VOTE_TAGS.map(([tag, emoji, label]) => {
     const n = counts[id]?.[tag] || 0, on = myVotes.has(id + ':' + tag);
-    return `<button class="vote${on ? ' on' : ''}" data-tag="${tag}" title="${on ? 'Tap to remove your vote' : `Great ${label.toLowerCase()} here? Tap to agree`}">${emoji} ${label}${n ? ` <b>${n}</b>` : ''}</button>`;
+    return `<button class="vote${on ? ' on' : ''}" data-tag="${tag}" aria-pressed="${on}" title="${on ? 'Tap to remove your vote' : `Great ${label.toLowerCase()} here? Tap to agree`}">${emoji} ${label}${n ? ` <b>${n}</b>` : ''}</button>`;
   }).join('');
 }
 function refreshVotes(id) {
@@ -303,7 +481,7 @@ if (db) {
       bestForEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
       bestFor = tag;
-      if (shops.length) render();
+      if (shops.length) { render(); listEl.scrollTop = 0; }
     });
     bestForEl.appendChild(b);
   });
@@ -340,7 +518,7 @@ async function fetchTravelerPicks(c) {
 // Names must match exactly after dropping generic words ("Café Grumpy" = "Cafe Grumpy"),
 // branch suffixes ("Stumptown – Pearl District") and punctuation. Looser matching
 // mistook e.g. "Bryant Park Café" for "Bryant Park Grill".
-const normName = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+const normName = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   .replace(/\s+[-–—(].*$/, '')
   .replace(/\b(the|cafe|caffe|coffee|roasters?|roasting|company|co|bar|shop|house|and)\b/g, '')
   .replace(/[^a-z0-9]/g, '');
@@ -461,6 +639,7 @@ async function findShops() {
   if (cached) return useShops(cached);
 
   rawShops = [];
+  countEl.textContent = 'Searching…';
   setStatus('Brewing results…');
   let quick = [];
   try {
@@ -484,13 +663,16 @@ async function findShops() {
     if (id !== searchId) return;
     loadingMore = false;
     if (quick.length) setNote('');
-    else setStatus('Couldn’t reach the coffee map right now. Please try again in a moment.');
+    else { countEl.textContent = 'Coffee near you'; setStatus('Couldn’t reach the coffee map right now. Please try again in a moment.'); }
   }
 }
 
 function render() {
   markers.clearLayers();
-  if (!shops.length) { setStatus('No coffee shops found here. Try a bigger radius.'); return; }
+  countEl.textContent = shops.length
+    ? `${shops.length} coffee shop${shops.length === 1 ? '' : 's'}`
+    : 'No coffee shops nearby';
+  if (!shops.length) { setStatus('No coffee shops found here. Try a bigger distance.'); return; }
   const votesFor = s => counts[s.id]?.[bestFor] || 0;
   const sorted = [...shops].sort(
     bestFor ? (a, b) => votesFor(b) - votesFor(a) || b.score - a.score
@@ -503,55 +685,60 @@ function render() {
   sorted.forEach((s, i) => {
     const t = s.tags;
     const addr = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+    const hours = todayHours(t.opening_hours);
+    const meta = [addr && esc(addr), hours && `<span class="${hours === 'Closed today' ? 'closed' : ''}" title="${esc(t.opening_hours)}">${hours}</span>`].filter(Boolean).join(' · ');
     const site = t.website || t['contact:website'];
     const dir = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`;
     const tags = [];
     if (s.pick) tags.push(`<a class="tag pick" href="https://en.wikivoyage.org/wiki/${encodeURIComponent(s.pick.page.replace(/ /g, '_'))}" target="_blank" rel="noopener" title="Recommended in the Wikivoyage travel guide">✈️ Traveler pick</a>`);
     if (!t.brand) tags.push('<span class="tag indie">Local</span>');
     else tags.push(`<span class="tag">${esc(t.brand)}</span>`);
+    if (t.internet_access && t.internet_access !== 'no') tags.push('<span class="tag">Wi‑Fi</span>');
     if (t.outdoor_seating === 'yes') tags.push('<span class="tag">Outdoor seating</span>');
-    if (t.internet_access && t.internet_access !== 'no') tags.push('<span class="tag">Wi-Fi</span>');
-    if (t.opening_hours) tags.push(`<span class="tag">${esc(t.opening_hours)}</span>`);
 
+    const rank = i + 1;
     const card = document.createElement('div');
     card.className = 'card' + (voting.has(s.id) ? ' voting' : '');
     card.dataset.id = s.id;
     card.innerHTML = `
-      <div class="rank">${i + 1}</div>
+      <div class="rank">${rank}</div>
       <div>
-        <div class="name">${esc(t.name)}</div>
-        ${addr ? `<div class="meta">${esc(addr)}</div>` : ''}
+        <div class="card-top"><div class="name">${esc(t.name)}</div><div class="dist">${fmtMiles(s.dist)}</div></div>
+        ${meta ? `<div class="meta">${meta}</div>` : ''}
         <div class="tags">${tags.join('')}</div>
         <div class="known">${knownHtml(s.id)}</div>
-        <div class="links" style="margin-top:6px">
-          <a href="${dir}" target="_blank" rel="noopener">Directions</a>
-          ${site ? `<a href="${esc(site)}" target="_blank" rel="noopener">Website</a>` : ''}
-          ${db ? '<a href="#" class="vote-toggle">👍 What’s it known for?</a>' : ''}
+        <div class="actions">
+          <a class="btn go" href="${dir}" target="_blank" rel="noopener">🧭 Directions</a>
+          ${site ? `<a class="btn" href="${esc(site)}" target="_blank" rel="noopener">🌐 Website</a>` : ''}
+          ${db ? '<button class="btn vote-toggle" type="button">👍 Known for…</button>' : ''}
         </div>
         <div class="votes">${db ? chipsHtml(s.id) : ''}</div>
-      </div>
-      <div class="dist">${fmtMiles(s.dist)}</div>`;
-    card.querySelector('.vote-toggle')?.addEventListener('click', e => {
-      e.preventDefault();
-      card.classList.toggle('voting');
-    });
+      </div>`;
+    card.querySelector('.vote-toggle')?.addEventListener('click', () => card.classList.toggle('voting'));
     card.querySelector('.votes').addEventListener('click', e => {
       const b = e.target.closest('.vote');
       if (b) toggleVote(s.id, b.dataset.tag);
     });
-    const rank = i + 1;
     const m = L.marker([s.lat, s.lon], { icon: pinIcon(rank), zIndexOffset: 1000 - rank, title: t.name })
-      .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`);
+      .bindPopup(`<b>${esc(t.name)}</b><br>${fmtMiles(s.dist)} away`, { autoPan: !mobileQuery.matches });
     markers.addLayer(m);
-    card.addEventListener('click', e => {
-      if (e.target.closest('a, .votes')) return; // links and vote buttons do their own thing
+    const select = () => {
       document.querySelectorAll('.card.active').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
       if (activeMarker) activeMarker.setIcon(pinIcon(activeMarker.rank));
       m.rank = rank; m.setIcon(pinIcon(rank, true)); activeMarker = m;
-      map.flyTo([s.lat, s.lon], 17, { duration: 0.6 }); m.openPopup();
+      m.openPopup();
+    };
+    card.addEventListener('click', e => {
+      if (e.target.closest('a, button, .votes')) return; // links and buttons do their own thing
+      select();
+      flyToPoint([s.lat, s.lon], 17);
     });
-    m.on('click', () => { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.click(); });
+    m.on('click', () => {
+      select();
+      if (mobileQuery.matches && sheet === 'peek') setSheet('half');
+      card.scrollIntoView({ behavior: 'smooth', block: mobileQuery.matches ? 'start' : 'center' });
+    });
     listEl.appendChild(card);
   });
 
@@ -562,7 +749,7 @@ function render() {
     note.className = 'bestnote';
     note.textContent = voted
       ? `${emoji} Sorted by ${label.toLowerCase()} votes: ${voted} shop${voted === 1 ? '' : 's'} nearby ${voted === 1 ? 'has' : 'have'} votes.`
-      : `${emoji} No one has voted for ${label.toLowerCase()} around here yet. Know a great spot? Tap “What’s it known for?” on it.`;
+      : `${emoji} No one has voted for ${label.toLowerCase()} around here yet. Know a great spot? Tap “Known for…” on it.`;
     listEl.prepend(note);
   }
   if (loadingMore) setNote('Finding more coffee shops…');
@@ -572,28 +759,34 @@ function render() {
 function setCenter(lat, lon, clearCity = true) {
   center = { lat, lon };
   activeMarker = null;
+  listEl.scrollTop = 0;
   if (clearCity) citiesEl.querySelectorAll('.on').forEach(x => x.classList.remove('on'));
   if (meMarker) meMarker.remove();
   meMarker = L.marker([lat, lon], { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18] }), zIndexOffset: 2000 })
     .addTo(map).bindPopup('Search center');
-  map.flyTo([lat, lon], 15, { duration: 1 });
+  if (mobileQuery.matches && sheet !== 'half') setSheet('half');
+  flyToPoint([lat, lon], 15);
   findShops();
 }
 
-document.getElementById('locate').addEventListener('click', () => {
+document.querySelectorAll('[data-locate]').forEach(b => b.addEventListener('click', () => {
   if (!navigator.geolocation) return setStatus('Your browser doesn’t support location. Search a place instead.');
+  document.getElementById('q').value = '';
+  countEl.textContent = 'Finding you…';
   setStatus('Finding you…');
   navigator.geolocation.getCurrentPosition(
     p => setCenter(p.coords.latitude, p.coords.longitude),
-    () => setStatus('Location access was blocked. Search a city or address instead.'),
+    () => { countEl.textContent = 'Coffee near you'; setStatus('Location access was blocked. Search a city or address instead.'); },
     { enableHighAccuracy: true, timeout: 10000 }
   );
-});
+}));
 
 document.getElementById('search').addEventListener('submit', async e => {
   e.preventDefault();
-  const q = document.getElementById('q').value.trim();
+  const input = document.getElementById('q');
+  const q = input.value.trim();
   if (!q) return;
+  input.blur(); // closes the phone keyboard so the results are visible
   setStatus('Looking that up…');
   try {
     const [hit] = await nominatim(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
